@@ -20,7 +20,7 @@ def get_binance_price(symbol):
     cleaned = original.upper().replace('PERP', '').replace('USDT', '').strip()
     symbol_final = cleaned + 'USDT'
     
-    url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol_final}"
+    url = f"https://fapi.binance.us/fapi/v1/ticker/24hr?symbol={symbol}"
     
     print(f"[DEBUG] 輸入: '{original}'")
     print(f"[DEBUG] 清理後: '{cleaned}' → 最終 symbol: {symbol_final}")
@@ -110,4 +110,5 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
