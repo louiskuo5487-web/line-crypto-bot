@@ -15,55 +15,48 @@ app = Flask(__name__)
 line_bot_api = LineBotApi(os.getenv('LINE_CHANNEL_ACCESS_TOKEN'))
 handler = WebhookHandler(os.getenv('LINE_CHANNEL_SECRET'))
 
-def get_binance_price(symbol):
+def get_bybit_price(symbol):
     original = symbol.strip()
     cleaned = original.upper().replace('PERP', '').replace('USDT', '').strip()
     symbol_final = cleaned + 'USDT'
     
-    url = f"https://fapi.binance.us/fapi/v1/ticker/24hr?symbol={symbol}"
+    url = f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={symbol_final}"
     
-    print(f"[DEBUG] 輸入: '{original}'")
-    print(f"[DEBUG] 清理後: '{cleaned}' → 最終 symbol: {symbol_final}")
-    print(f"[DEBUG] 請求 URL: {url}")
+    print(f"[DEBUG] 輸入: '{original}' → 最終 symbol: {symbol_final}")
+    print(f"[DEBUG] Bybit URL: {url}")
     
     try:
         r = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0'})
         print(f"[DEBUG] 狀態碼: {r.status_code}")
-        print(f"[DEBUG] 回應長度: {len(r.text)} 字")
         print(f"[DEBUG] 回應前300字: {r.text[:300]}...")
         
         if r.status_code != 200:
-            return f"API 錯誤 {r.status_code}: {r.text[:200]}"
+            return f"Bybit API 錯誤 {r.status_code}: {r.text[:200]}"
         
         data = r.json()
-        print(f"[DEBUG] JSON keys: {list(data.keys())}")
+        print(f"[DEBUG] 完整回應 keys: {list(data.keys())}")
         
-        if isinstance(data, list):
-            if data:
-                data = data[0]
-            else:
-                return "API 回空陣列"
+        if data.get('retCode') != 0:
+            return f"Bybit 錯誤: {data.get('retMsg')}"
         
-        if 'lastPrice' not in data:
-            return f"缺少 lastPrice key，回應: {r.text[:200]}"
+        result = data.get('result', {})
+        tickers = result.get('list', [])
+        if not tickers:
+            return "Bybit 無資料"
         
-        price = float(data['lastPrice'])
-        change = float(data.get('priceChangePercent', 0))
+        ticker = tickers[0]
+        price = float(ticker.get('lastPrice', 0))
+        change_str = ticker.get('price24hPcnt', '0')
+        change = float(change_str) * 100  # 轉成 %，Bybit 給的是小數如 0.02617
         
         return {
-            'symbol': data.get('symbol', symbol_final),
+            'symbol': ticker.get('symbol', symbol_final),
             'price': price,
             'change': change
         }
-    except requests.exceptions.RequestException as e:
-        print(f"[REQUEST ERROR] {str(e)}")
-        return f"網路錯誤: {str(e)}"
-    except ValueError as e:
-        print(f"[JSON ERROR] {str(e)}")
-        return f"JSON 解析錯誤: {str(e)}"
     except Exception as e:
-        print(f"[其他錯誤] {str(e)}")
-        return f"未知錯誤: {str(e)}"
+        print(f"[DEBUG] 錯誤: {str(e)}")
+        return f"網路/解析錯誤: {str(e)}"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -84,7 +77,7 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
         return
 
-    info = get_binance_price(text)
+    info = get_bybit_price(text)
     if not info or isinstance(info, str):  # 如果是錯誤字串
         error_msg = info if isinstance(info, str) else "找不到資料"
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"❌ 錯誤: {error_msg}\n\n請把 Railway Deploy Logs 的 [DEBUG] 內容貼給我"))
@@ -110,5 +103,6 @@ def handle_message(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
 
